@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-contract MarketPace  is Ownable {
+contract MarketPlace  is Ownable {
     using Counters for Counters.Counter;
     // thu vien nay nhu 1 kho chua du lieu 
     using EnumerableSet for EnumerableSet.AddressSet; 
@@ -82,7 +82,7 @@ contract MarketPace  is Ownable {
     // MODIFIER
     modifier onlySupportPaymentToken(address paymentToken)
     {
-        require(isPaymentTokenSupported(paymentToken),"NFTMarketPlace : unsupport payment token ");
+        require(isPaymentTokenSupported(paymentToken),"NFTMarketplace: unsupport payment token");
         _;
     }
 
@@ -100,7 +100,7 @@ contract MarketPace  is Ownable {
     function _updateFeeRate(uint256 feeDecimal , uint256 feeRate ) internal {
         require(
             feeRate <  10 ** (feeDecimal + 2),
-            "NFTMarketplace : bad  fee rate "
+            "NFTMarketplace: bad fee rate"
         );
         // nguyen nhan require 
         // phan tram fee  bat buoc <  100%
@@ -110,7 +110,7 @@ contract MarketPace  is Ownable {
         // ap dung feeRate: 0.1% => 1%, decimal : 1
         // 1 < 1000 => 0.1%
         // vi du feeRate lon 21.321 thi decimal cao hon 
-        _feeDecimal = feeDecimal;
+        _feeRate = feeRate;
         emit FeeRateUpdate(feeDecimal, feeRate);
     }
 
@@ -120,7 +120,7 @@ contract MarketPace  is Ownable {
 
 
     // caculate fee
-    function _caculateFee(uint256 orderId) private view returns (uint256)
+    function _calculateFee(uint256 orderId) private view returns (uint256)
     {
        Order storage _order = _orders[orderId];
        if(_feeRate == 0 )
@@ -143,12 +143,12 @@ contract MarketPace  is Ownable {
     // support supportPaymentToken 
     // add vao asset payment Token 
      function addPaymentToken (address paymentToken) external onlyOwner{
-        require(paymentToken != address(0),"NFTMarketPlace : paymentToken is zero address ");
-        require(_supportedPaymentTokens.add(paymentToken),"NFTMarketplace : already supported");
+        require(paymentToken != address(0),"NFTMarketPlace : paymentToken is zero address");
+        require(_supportedPaymentTokens.add(paymentToken),"NFTMarketplace: already supported");
      }
 
      // kiem tra da add vao paymenToken 
-     function isPaymentTokenSupported(address paymentToken) public  view onlyOwner returns(bool){
+     function isPaymentTokenSupported(address paymentToken) public  view  returns(bool){
         return _supportedPaymentTokens.contains(paymentToken);
      }  
 
@@ -157,11 +157,17 @@ contract MarketPace  is Ownable {
     function addOrder (uint256 tokenId, address paymentToken , uint256 price ) 
      public  onlySupportPaymentToken(paymentToken) 
     {
+        require(_nftContract.ownerOf(tokenId) == msg.sender ,"NFTMarketplace: sender is not owner of token");
+        require(_nftContract.getApproved(tokenId) == address(this) || 
+                _nftContract.isApprovedForAll(_msgSender(), address(this))
+                ,"NFTMarketplace: The contract is unauthorized to manage this token");
+        require(price > 0, "NFTMarketplace: price must be greater than 0");
         uint256 orderId = _orderIdCount.current();
         _orders[orderId] = Order(_msgSender(),address(0),tokenId,paymentToken,price);
+        _orderIdCount.increment();
         // transfer nft nguoi goi ham vao marketplace
         // nguoi msg.sender phai approve cho marketplace khong se bi loi transferFrom 
-        _nftContract.transferFrom(_msgSender(),address(0),tokenId);
+        _nftContract.transferFrom(_msgSender(),address(this),tokenId);
         emit OrderAdded(orderId,_msgSender(),tokenId,paymentToken,price);
     }
 
@@ -173,5 +179,28 @@ contract MarketPace  is Ownable {
         uint256 tokenId = order.tokenId;
         delete _orders[orderId];
         _nftContract.transferFrom(address(this),_msgSender(),tokenId);
+        emit OrderCancelled(orderId);
+    }
+
+    function executeOrder(uint256 orderId) external {
+        Order storage order = _orders[orderId];
+        // kiem tra xem order cancel roi hoac khong to ntai 
+        require(!isSeller(orderId,msg.sender), "NFTMarketplace: buyer must be different from seller" );
+        require(order.price > 0 ,"NFTMarketplace: order has been canceled");
+        require(order.buyer == address(0),"NFTMarketplace: buyer must be zero");
+     
+        // update 
+        order.buyer = msg.sender;
+        // tinh  fee
+        uint256 feeAmount = _calculateFee(orderId);
+        if(feeAmount > 0 )
+        {
+            // chuyen phi fee cho  tai khoan trung gian 
+            IERC20(order.paymentToken).transferFrom(msg.sender,_feeRecipient,feeAmount);
+        }
+        // chuyen token tuong ung voi order price 
+        IERC20(order.paymentToken).transferFrom(msg.sender,order.seller,order.price - feeAmount);
+        _nftContract.transferFrom(address(this),msg.sender,order.tokenId);
+        emit OrderMatched(orderId, order.seller,order.buyer,order.tokenId,order.paymentToken,order.price);
     }
 }   
