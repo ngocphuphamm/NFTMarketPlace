@@ -10,7 +10,7 @@ contract Bin is ERC721,Ownable{
     
     Counters.Counter private _tokenIdCount;
     string private _baseTokenURI;
-    constructor() ERC721("Bin","PNP")
+    constructor() ERC721("Bin","BN")
     {
         
     }
@@ -33,4 +33,5 @@ contract Bin is ERC721,Ownable{
         _baseTokenURI = baseUpdateURI;
     }
 
+    
 }
