@@ -111,6 +111,7 @@ contract MarketPlace  is Ownable {
         // 1 < 1000 => 0.1%
         // vi du feeRate lon 21.321 thi decimal cao hon 
         _feeRate = feeRate;
+        _feeDecimal = feeDecimal;
         emit FeeRateUpdate(feeDecimal, feeRate);
     }
 
@@ -124,8 +125,10 @@ contract MarketPlace  is Ownable {
     {
        Order storage _order = _orders[orderId];
        if(_feeRate == 0 )
+       {
             return 0;
-        return (_feeRate * _order.price) / 10 ** (_feeDecimal + 2 );
+       }
+        return (_feeRate * _order.price) / 10**(_feeDecimal + 2);
         // feeRate : 10 
         // _feeDecimal : 0 
         // price : 100 
@@ -190,13 +193,14 @@ contract MarketPlace  is Ownable {
         require(order.buyer == address(0),"NFTMarketplace: buyer must be zero");
      
         // update 
-        order.buyer = msg.sender;
+        order.buyer = _msgSender();
         // tinh  fee
         uint256 feeAmount = _calculateFee(orderId);
+        
         if(feeAmount > 0 )
         {
             // chuyen phi fee cho  tai khoan trung gian 
-            IERC20(order.paymentToken).transferFrom(msg.sender,_feeRecipient,feeAmount);
+            IERC20(order.paymentToken).transferFrom(_msgSender(),_feeRecipient,feeAmount);
         }
         // chuyen token tuong ung voi order price 
         IERC20(order.paymentToken).transferFrom(msg.sender,order.seller,order.price - feeAmount);
